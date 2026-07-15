@@ -6,12 +6,14 @@ use App\BotApp;
 use App\Config;
 use App\Db;
 use App\Api\TelegramApi;
+use App\Repository\AiSessionRepository;
 use App\Repository\CartRepository;
 use App\Repository\JobRepository;
 use App\Repository\OrderRepository;
 use App\Repository\ProductRepository;
 use App\Service\CryptomusService;
 use App\Service\KeystoreService;
+use App\Service\OpenAiService;
 use App\Support\HttpResponse;
 use App\Support\SessionAuth;
 use App\Web\AdminDashboardController;
@@ -36,16 +38,24 @@ $cryptomus = new CryptomusService(
     allowedIps: $config->cryptomusAllowedIps,
 );
 $keystore = new KeystoreService($config->keystoreBaseUrl, $config->keystoreApiKey);
+$openAi = new OpenAiService(
+    apiKey: $config->openAiApiKey,
+    model: $config->openAiModel,
+    instructions: $config->openAiInstructions,
+    maxOutputTokens: $config->openAiMaxOutputTokens,
+);
 
 $app = new BotApp(
     config: $config,
     telegram: $telegram,
     products: $productRepository,
+    aiSessions: new AiSessionRepository($pdo),
     carts: new CartRepository($pdo),
     orders: $orders,
     jobs: $jobs,
     cryptomus: $cryptomus,
     keystore: $keystore,
+    openAi: $openAi,
     pdo: $pdo,
 );
 

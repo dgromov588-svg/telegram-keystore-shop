@@ -13,6 +13,7 @@ final class Keyboard
                 [['text' => '🛍 Каталог', 'callback_data' => 'catalog']],
                 [['text' => '🧺 Корзина', 'callback_data' => 'cart']],
                 [['text' => '📦 Мои заказы', 'callback_data' => 'orders']],
+                [['text' => '🤖 AI-помощник', 'callback_data' => 'ai_help']],
             ],
         ];
     }
@@ -66,6 +67,16 @@ final class Keyboard
             'inline_keyboard' => [
                 [['text' => '💸 Оплатить', 'url' => $paymentUrl]],
                 [['text' => '🔄 Проверить оплату', 'callback_data' => 'checkpay:' . $orderId]],
+                [['text' => '⬅️ В меню', 'callback_data' => 'home']],
+            ],
+        ];
+    }
+
+    public static function ai(): array
+    {
+        return [
+            'inline_keyboard' => [
+                [['text' => '🧹 Новый диалог', 'callback_data' => 'ai_reset']],
                 [['text' => '⬅️ В меню', 'callback_data' => 'home']],
             ],
         ];
