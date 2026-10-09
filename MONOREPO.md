@@ -5,6 +5,7 @@
 - `telegram-keystore-shop/` — магазин товаров в Telegram
 - `projects/tg-music-bot/` — бот для поиска и публикации музыки
 - `projects/office-report-bot/` — бот для офисных отчётов
+- `projects/chatgpt-telegram-bot/` — отдельный Telegram-бот для общения с ChatGPT
 
 ## Текущее состояние
 
@@ -21,6 +22,7 @@
 ├── src/
 ├── deploy/
 └── projects/
+    ├── chatgpt-telegram-bot/
     ├── office-report-bot/
     └── tg-music-bot/
 ```

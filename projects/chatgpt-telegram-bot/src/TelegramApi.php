@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace App\Api;
+namespace ChatGptTelegramBot;
 
 final class TelegramApi
 {
     private string $baseUrl;
 
-    public function __construct(private readonly string $botToken)
+    public function __construct(string $botToken)
     {
         $this->baseUrl = 'https://api.telegram.org/bot' . $botToken . '/';
     }
@@ -16,26 +16,35 @@ final class TelegramApi
     public function setWebhook(string $url, ?string $secretToken = null): array
     {
         $payload = ['url' => $url];
-        if ($secretToken !== null) {
+        if ($secretToken !== null && $secretToken !== '') {
             $payload['secret_token'] = $secretToken;
         }
 
         return $this->request('setWebhook', $payload);
     }
 
-    public function sendMessage(int $chatId, string $text, ?array $replyMarkup = null, ?string $parseMode = 'HTML'): array
+    public function deleteWebhook(): array
+    {
+        return $this->request('deleteWebhook', []);
+    }
+
+    public function getUpdates(int $offset = 0, int $timeout = 30): array
+    {
+        return $this->request('getUpdates', [
+            'offset' => $offset,
+            'timeout' => $timeout,
+        ]);
+    }
+
+    public function sendMessage(int $chatId, string $text, ?array $replyMarkup = null): array
     {
         $payload = [
             'chat_id' => $chatId,
             'text' => $text,
         ];
 
-        if ($parseMode !== null) {
-            $payload['parse_mode'] = $parseMode;
-        }
-
         if ($replyMarkup !== null) {
-            $payload['reply_markup'] = json_encode($replyMarkup, JSON_UNESCAPED_UNICODE);
+            $payload['reply_markup'] = json_encode($replyMarkup, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         }
 
         return $this->request('sendMessage', $payload);
@@ -49,28 +58,11 @@ final class TelegramApi
         ]);
     }
 
-    public function editMessageText(int $chatId, int $messageId, string $text, ?array $replyMarkup = null): array
-    {
-        $payload = [
-            'chat_id' => $chatId,
-            'message_id' => $messageId,
-            'text' => $text,
-            'parse_mode' => 'HTML',
-        ];
-
-        if ($replyMarkup !== null) {
-            $payload['reply_markup'] = json_encode($replyMarkup, JSON_UNESCAPED_UNICODE);
-        }
-
-        return $this->request('editMessageText', $payload);
-    }
-
-    public function answerCallbackQuery(string $callbackQueryId, string $text = '', bool $showAlert = false): array
+    public function answerCallbackQuery(string $callbackQueryId, string $text = ''): array
     {
         return $this->request('answerCallbackQuery', [
             'callback_query_id' => $callbackQueryId,
             'text' => $text,
-            'show_alert' => $showAlert,
         ]);
     }
 
@@ -81,12 +73,14 @@ final class TelegramApi
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => $payload,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 30,
+            CURLOPT_TIMEOUT => 90,
         ]);
 
         $raw = curl_exec($ch);
         if ($raw === false) {
-            throw new \RuntimeException('Telegram request failed: ' . curl_error($ch));
+            $message = curl_error($ch);
+            curl_close($ch);
+            throw new \RuntimeException('Telegram request failed: ' . $message);
         }
 
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);

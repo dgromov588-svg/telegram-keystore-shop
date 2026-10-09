@@ -38,6 +38,11 @@ final class Config
     public string $keystoreBaseUrl;
     public string $keystoreApiKey;
 
+    public ?string $openAiApiKey;
+    public string $openAiModel;
+    public string $openAiInstructions;
+    public int $openAiMaxOutputTokens;
+
     public int $workerSleepSeconds;
     public int $workerMaxJobsPerRun;
     public int $workerRetryDelaySeconds;
@@ -83,6 +88,11 @@ final class Config
 
         $this->keystoreBaseUrl = $this->requireEnv('KEYSTORE_BASE_URL');
         $this->keystoreApiKey = $this->requireEnv('KEYSTORE_API_KEY');
+
+        $this->openAiApiKey = getenv('OPENAI_API_KEY') ?: null;
+        $this->openAiModel = getenv('OPENAI_MODEL') ?: 'gpt-5.2';
+        $this->openAiInstructions = getenv('OPENAI_INSTRUCTIONS') ?: 'Ты AI-ассистент Telegram-магазина цифровых товаров. Отвечай на русском языке кратко, дружелюбно и полезно. Помогай выбрать товар, объясняй оплату и доставку, но не обещай того, чего нет в каталоге.';
+        $this->openAiMaxOutputTokens = max(64, (int) (getenv('OPENAI_MAX_OUTPUT_TOKENS') ?: 800));
 
         $this->workerSleepSeconds = max(1, (int) (getenv('WORKER_SLEEP_SECONDS') ?: 3));
         $this->workerMaxJobsPerRun = max(1, (int) (getenv('WORKER_MAX_JOBS_PER_RUN') ?: 30));

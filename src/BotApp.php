@@ -6,12 +6,14 @@ namespace App;
 
 use PDO;
 use App\Api\TelegramApi;
+use App\Repository\AiSessionRepository;
 use App\Repository\CartRepository;
 use App\Repository\JobRepository;
 use App\Repository\OrderRepository;
 use App\Repository\ProductRepository;
 use App\Service\CryptomusService;
 use App\Service\KeystoreService;
+use App\Service\OpenAiService;
 use App\Support\HttpResponse;
 use App\Support\Keyboard;
 
@@ -21,11 +23,13 @@ final class BotApp
         private readonly Config $config,
         private readonly TelegramApi $telegram,
         private readonly ProductRepository $products,
+        private readonly AiSessionRepository $aiSessions,
         private readonly CartRepository $carts,
         private readonly OrderRepository $orders,
         private readonly JobRepository $jobs,
         private readonly CryptomusService $cryptomus,
         private readonly KeystoreService $keystore,
+        private readonly OpenAiService $openAi,
         private readonly PDO $pdo,
     ) {
     }
@@ -143,11 +147,27 @@ final class BotApp
         );
 
         if ($text === '/start') {
-            $this->telegram->sendMessage($chatId, "Добро пожаловать в магазин цифровых товаров.\n\nВыбери действие:", Keyboard::main());
+            $this->telegram->sendMessage($chatId, "Добро пожаловать в магазин цифровых товаров.\n\nВыбери действие или просто напиши вопрос AI-помощнику:", Keyboard::main());
             return;
         }
 
-        $this->telegram->sendMessage($chatId, 'Неизвестная команда. Используй /start');
+        if ($text === '/ai') {
+            $this->telegram->sendMessage($chatId, $this->renderAiHelp(), Keyboard::ai());
+            return;
+        }
+
+        if ($text === '/resetai') {
+            $this->aiSessions->reset($telegramUserId);
+            $this->telegram->sendMessage($chatId, 'Готово: контекст AI-диалога очищен. Напиши новый вопрос.');
+            return;
+        }
+
+        if ($text !== '') {
+            $this->answerWithAi($chatId, $telegramUserId, $text);
+            return;
+        }
+
+        $this->telegram->sendMessage($chatId, 'Неизвестная команда. Используй /start или /ai');
     }
 
     private function handleCallback(array $callback): void
@@ -189,6 +209,19 @@ final class BotApp
             $orders = $this->orders->recentByUser($telegramUserId);
             $this->telegram->editMessageText($chatId, $messageId, $this->renderOrders($orders), Keyboard::backToHome());
             $this->telegram->answerCallbackQuery($callbackId);
+            return;
+        }
+
+        if ($data === 'ai_help') {
+            $this->telegram->editMessageText($chatId, $messageId, $this->renderAiHelp(), Keyboard::ai());
+            $this->telegram->answerCallbackQuery($callbackId);
+            return;
+        }
+
+        if ($data === 'ai_reset') {
+            $this->aiSessions->reset($telegramUserId);
+            $this->telegram->editMessageText($chatId, $messageId, "Контекст AI-диалога очищен.\n\nНапиши новый вопрос обычным сообщением.", Keyboard::ai());
+            $this->telegram->answerCallbackQuery($callbackId, 'Диалог очищен');
             return;
         }
 
@@ -302,6 +335,95 @@ final class BotApp
         }
 
         $this->telegram->answerCallbackQuery($callbackId, 'Неизвестное действие', true);
+    }
+
+    private function answerWithAi(int $chatId, int $telegramUserId, string $question): void
+    {
+        if (!$this->openAi->isConfigured()) {
+            $this->telegram->sendMessage(
+                $chatId,
+                "AI-помощник пока не настроен. Администратору нужно добавить OPENAI_API_KEY в переменные окружения.",
+                Keyboard::backToHome()
+            );
+            return;
+        }
+
+        $this->telegram->sendChatAction($chatId);
+
+        try {
+            $answer = $this->openAi->ask($this->buildAiInput($question), $this->aiSessions->getLastResponseId($telegramUserId));
+            $this->aiSessions->rememberResponse($telegramUserId, $answer['response_id']);
+            foreach ($this->splitTelegramMessage($answer['text']) as $part) {
+                $this->telegram->sendMessage($chatId, $part, Keyboard::ai(), null);
+            }
+        } catch (\Throwable $e) {
+            error_log((string) $e);
+            $this->telegram->sendMessage($chatId, 'Не удалось получить ответ AI. Попробуй позже или вернись в меню.', Keyboard::main());
+        }
+    }
+
+
+    private function buildAiInput(string $question): string
+    {
+        $lines = [
+            'Актуальный каталог магазина:',
+        ];
+
+        foreach ($this->products->allActive() as $product) {
+            $lines[] = sprintf(
+                '- %s: %s. Цена: %s',
+                (string) $product['title'],
+                (string) $product['description'],
+                Keyboard::money((int) $product['price_cents'], $this->config->storeCurrencySymbol)
+            );
+        }
+
+        if (count($lines) === 1) {
+            $lines[] = '- Сейчас в каталоге нет активных товаров.';
+        }
+
+        $lines[] = '';
+        $lines[] = 'Вопрос пользователя:';
+        $lines[] = $question;
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @return string[]
+     */
+    private function splitTelegramMessage(string $text): array
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return ['AI вернул пустой ответ. Попробуй переформулировать вопрос.'];
+        }
+
+        $characters = preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY);
+        if ($characters === false) {
+            return str_split($text, 3500);
+        }
+
+        $chunks = [];
+        $chunk = '';
+        foreach ($characters as $character) {
+            if (strlen($chunk . $character) > 3500) {
+                $chunks[] = $chunk;
+                $chunk = '';
+            }
+            $chunk .= $character;
+        }
+
+        if ($chunk !== '') {
+            $chunks[] = $chunk;
+        }
+
+        return $chunks;
+    }
+
+    private function renderAiHelp(): string
+    {
+        return "<b>AI-помощник</b>\n\nНапиши вопрос обычным сообщением — бот ответит с учетом предыдущего диалога.\n\nКоманды:\n/ai — показать эту справку\n/resetai — начать новый AI-диалог";
     }
 
     private function enqueueDelivery(int $orderId): void
